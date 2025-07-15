@@ -1,17 +1,28 @@
+import streamlit as st
 from pymongo import MongoClient
 from datetime import datetime
 import uuid
 import time
+import toml
+import os
+
+# Load secrets from .streamlit/secrets.toml
+secrets = toml.load(os.path.join(".streamlit", "secrets.toml")) if os.path.exists(os.path.join(".streamlit", "secrets.toml")) else {}
+MONGO_URI = secrets.get("mongo", {}).get("uri", "mongodb+srv://itrebmalak:azerty1234@chatbotpbprojet.9v7hlst.mongodb.net/")
+DB_NAME = secrets.get("mongo", {}).get("database", "chatbot_db")
+
 # Connexion à MongoDB
-client = MongoClient('mongodb+srv://itrebmalak:azerty1234@chatbotpbprojet.9v7hlst.mongodb.net/')
-db = client['chatbot_db']
+client = MongoClient(MONGO_URI)
+db = client[DB_NAME]
 qa_collection = db['qa']
 unanswered_collection = db['unanswered']
 usage_collection = db['usage_stats']
+
 # --------------------- GESTION UTILISATEUR & SESSION ---------------------
 # Génère un ID unique par session
 user_id = str(uuid.uuid4())
 session_start_time = time.time()
+
 # --------------------- TRAITEMENT DES QUESTIONS ---------------------
 def get_exact_answer(question):
     """
@@ -37,6 +48,7 @@ def get_exact_answer(question):
         # Si pas de réponse, enregistrer comme non résolue
         save_unanswered_question(question)
         return "Désolé, je n'ai pas encore la réponse à cette question."
+
 def save_unanswered_question(question):
     """
     Sauvegarde une question sans réponse dans 'qa' et 'unanswered'.
@@ -53,6 +65,7 @@ def save_unanswered_question(question):
         'resolved': False,
         'response_time': None,
         'user_id': user_id})
+
 # --------------------- ENREGISTREMENT DES STATS DE SESSION ---------------------
 def save_session():
     """
@@ -65,6 +78,3 @@ def save_session():
         'user_id': user_id,
         'date': datetime.now(),
         'duration': duration_minutes})
-    
-
-    
