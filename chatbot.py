@@ -3,7 +3,7 @@ from datetime import datetime
 import uuid
 import time
 # Connexion à MongoDB
-client = MongoClient('mongodb://localhost:27017/')
+client = MongoClient('mongodb+srv://itrebmalak:azerty1234@chatbotpbprojet.9v7hlst.mongodb.net/')
 db = client['chatbot_db']
 qa_collection = db['qa']
 unanswered_collection = db['unanswered']

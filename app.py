@@ -7,15 +7,20 @@ import streamlit.components.v1 as components
 from streamlit_option_menu import option_menu
 from pymongo import MongoClient
 from datetime import datetime, timedelta
-from chatbot import get_exact_answer, save_unanswered_question
+from chatbot import get_exact_answer, save_unanswered_question, save_session
+
 # ------------------- CONFIGURATION -------------------
 st.set_page_config(page_title="Chatbot BP", page_icon="🤖", layout="wide")
 
-# ------------------- CONSTANTES MONGODB -------------------
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "chatbot_db"
-QUESTIONS_COLLECTION = "unanswered_questions"
-USAGE_COLLECTION = "chat_usage"
+# ------------------- LOAD SECRETS -------------------
+import toml
+import os
+secrets = toml.load(".streamlit/secrets.toml") if os.path.exists(".streamlit/secrets.toml") else {}
+MONGO_URI = secrets.get("mongo", {}).get("uri", "mongodb+srv://itrebmalak:azerty1234@chatbotpbprojet.9v7hlst.mongodb.net/")
+DB_NAME = secrets.get("mongo", {}).get("database", "chatbot_db")
+QUESTIONS_COLLECTION = "qa"
+USAGE_COLLECTION = "usage_stats"
+FEEDBACK_COLLECTION = "feedback"
 
 # ------------------- LOGO EN HAUT À DROITE -------------------
 with open("logo_bp.png", "rb") as file_:
@@ -58,6 +63,7 @@ st.markdown(f"""
         }}
     </style>
 """, unsafe_allow_html=True)
+
 # ------------------- MENU -------------------
 with st.sidebar:
     st.markdown(f"""
@@ -206,15 +212,15 @@ if onglet == "💬 Chatbot":
                 placeholder="Tapez votre question ici...",
                 key="user_input",
                 label_visibility="collapsed"
-)
+            )
         with col2:
             send = st.form_submit_button("➤", help="Envoyer", use_container_width=True)
         if send and question.strip():
-# Ajout du message utilisateur
+            # Ajout du message utilisateur
             st.session_state.chat.append({"role": "user", "msg": question})    
-  # Simulation de délai pour le bot
+            # Simulation de délai pour le bot
             with st.spinner("Je réfléchis..."):
-    # Récupération de la réponse
+                # Récupération de la réponse
                 reponse = get_exact_answer(question.strip())
                 if reponse:
                     st.session_state.chat.append({"role": "bot", "msg": reponse})
@@ -222,8 +228,8 @@ if onglet == "💬 Chatbot":
                     default_msg = "Je n'ai pas trouvé d'information précise sur ce sujet. La question est enregistrée pour des traitements futurs."
                     st.session_state.chat.append({"role": "bot", "msg": default_msg})
                     save_unanswered_question(question.strip())
-            from chatbot import save_session
             save_session()
+            track_chat_usage()
             st.rerun()
     # Bouton de réinitialisation stylisé
     if st.button("🔃 Nouvelle conversation"):
@@ -295,49 +301,48 @@ elif onglet == "💡 Bonnes pratiques":
         <p style='color: #e5e7e6; font-size: 20px;'><strong>Voici un recueil de bonnes pratiques 👇 :</strong></p>
     """, unsafe_allow_html=True)
     bonnes_pratiques = {
-       "Paiement des frais d'enregistrement de la carte de l'auto-entrepreneur : référence sur T24 13 chiffres au lieu de 12 (transaction PFA)": "Dérouler l'opération sur le Legacy en effectuant une opération d'encaissement sur T24",
-  "Compte reçu par mutation affiche le message compte non géré par votre agence": "Le processus partagé sur la com Hello Sprint est a respecter en renseignant la demande : mutation Tiers ou mutation compte et en la communiquant au DGSI de la BPR",
-  "Champ taille entreprise": "Ce champ n’est pas modifiable en agence, la gestion est centralisée à la BCP via une mise a jour automatisée par chargement de fichier",
-  "Eligibilité compte/ packs": "L’éligibilité aux Comptes et packs est calculée à partir de la signalétique client, la première vérification à faire en cas de problème et de checker les données signalétiques.",
-  "Retrait déplacé sans chèque au titulaire du compte": "L'agence doit faire un retrait MAD pour lui-même au lieu de Chaabi Cash sauf en cas d’un forçage sur le compte du client",
-  "Pour éviter l'affichage du message \"MAD réglée\" lors du règlement des MAD": "Ne pas fermer la fenêtre avant l'aboutissement de l'opération",
-  "Retraits sans chèques sans commissions": "Les frais des retraits sans chèques ne sont pas prélevés pour les deux cas suivants :\n1. Client nouvellement crée ne disposant pas de moyens de paiement (pendant un délai de 3 semaines)\n2. Client interdit de chéquiers jusqu'à régularisation de sa situation\n\nPour les cas normaux la commission est de 33DH quel que soit le montant.",
-  "Accès à la caisse": "Le RA peut disposer de deux caisses (caisse secondaire et caisse principale), toutefois, pour y accéder une seule caisse peut être ouverte",
-  "Chéquiers qui ne sont pas physiquement reçus et s'affichent sur le SI T24 pour réception": "Les anciennes commandes de chéquiers qui n’ont pas abouti et qui remontent à des dates très anciennes (Juin et juillet) dont les carnets ne sont pas physiquement reçus par l’agence peuvent être détruits sur T24 en utilisant le code : 16 = Annulation",
-  "Pour permettre au CTN GC de lever la surveillance « dossier juridique en cours de validation »": "Il y a lieu de :\nS’assurer que les deux champs « Motif de levée de la surveillance » et « Commentaire désactivation/modification » sont à blanc et dénouer les opérations en instance de validation objet de « Pending Approval » au niveau de l’overview du compte.",
-  "Paiement d'une opération RIA": "Le paiement d’une opération RIA n’est effectif qu’après édition du bordereau, si l’utilisateur n’arrive pas à l’étape de l’impression l’opération est considérée comme non autorisée et le client ne doit pas être servi.",
-  "Mise à disposition": "Si la MAD a été topée P (statut payé) sur Host sans que l'opération ne soit retrouvée sur T24 par l'agence en charge du règlement, l'utilisateur doit d'abord sortir du menu règlement et refaire cette opération une nouvelle fois.",
-  "Numéro GSM des sms": "En cas de non réplication du numéro GSM bloquant la création d'une carte sur Power card, il faut modifier la fiche et ajouter +212. \nLors de l'entrée en relation via DIGITALIS avec +212.",
-  "La levée de la surveillance migrée « 79 : Autre motif migration » sur le compte est à opérer à l’instar des surveillances manuelles suivantes levées en Front office": "20 : opposition sur compte\n21 : opposition à tous mouvements\n22 : oppositions des héritiers\n33 : saisie gel judiciaire\nLa levée des surveillances précitées doit être appuyée par un justificatif conformément au dispositif réglementaire interne.",
-  "Chemin de levée d’une surveillance manuelle": "1. Aller sur le menu \"Gestion des surveillances\" puis \"Lever de la surveillance\"\n2. Renseigner le numéro de compte en question\n3. Cliquer sur le \"+\" comme pour ajouter un nouveau motif de surveillance puis cliquer sur le \"-\" qui apparait en rouge\n4. Cliquer sur Approuver en sollicitant la validation d'un deuxième profil",
-  "Etapes de levée d’une surveillance mixte dont l’habilitation est du ressort du Front office (Cf. Hello Sprint du 28/07)": "Cette levée doit être appuyée par un justificatif conformément au dispositif réglementaire interne.",
-  "Chemin de levée d’une surveillance mixte de l'Overview compte": "1. Accès à l'Overview à travers la Recherche du compte\n2. Levée à travers le lien « Levée surveillances mixtes » et validation via un deuxième profil à travers le lien «Autorisat. levée surveillances mixtes » (cf. Hello Sprint du 28/07)",
-  "Exécution d'une opération de caisse au débit (message bloquant : Le solde de la caisse est insuffisant)": "S'assurer de l'autorisation des transferts entre la caisse principale et la caisse secondaire au démarrage de la journée avant la saisie de toutes opérations de caisse afin d'éviter les écarts entre les coupures et le solde de la caisse.",
-  "Levée de blocage manuel": "Lorsqu’on souhaite lever un blocage manuellement des deux systèmes (MANSOUR/T24), il faudrait commencer par la levée dans T24 dans un premier temps, et ensuite le lever dans MANSOUR PAP.",
-  "Affectation d’une caisse à un nouvel agent": "Avant l’affectation d’un agent vers une nouvelle agence, toujours s’assurer au préalable qu’il n’a pas une caisse qui lui est encore affectée, … pour éviter tout blocage dans sa nouvelle affectation.",
-  "Problème d’impression": "Ne pas quitter l’écran principal de l’impression avant la fin du traitement : sablier ou barre de progression en cours, ou alors édition non trouvée merci de réessayer. Dans ce dernier cas, il faut cliquer sur ok et redemander l’impression.",
-  "Historique des comptes 13230 non consultables sur PAP mais consultables sur T24": "Changer le générique 13230 (PCI) par le correspondant 12131 (PCEC). Faire la consultation sur docubase",
-  "Au moment de la clôture de compte, le message suivant s’affiche « Partiel payoff is not allowed »": "Vérifier au niveau de l’onglet Bills dans la rubrique Addional Details au niveau de l’over view du compte, l’existence d’impayés en instance de règlement",
-  "Clôture compte sur carnet": "Le retrait pour la clôture du compte sur carnet à effectuer sur PAP au lieu de T24",
-  "Incidents KYC": "Lors de l’élaboration du compte rendu d’entretien NE PAS UTILISER SUR LE BOUTON BROUILLON",
-  "Clients de passage": "La modification de la mini signalétique clients de passage se fait EXCLUSIVEMENT au niveau des écrans référentiel, la modification effectuée sur les écrans des opérations n’est pas prise en charge.",
-  "Souscription aux packages avec message d’erreur : Expiry date": "Si le message d’erreur est affiché lors de la souscription aux packages remonter le problème pour résolution en central par les équipes ATF.\nUne fausse manipulation est constatée pour contourner ce problème en supprimant la valeur UPDATE du champ Action en bas de l’écran, cette action débloque l’écran de souscription mais engendre des problèmes de comptabilisation et de réplication du pack en question au niveau du host.\n\nDe ce fait dès apparition de ce message la seule action à entreprendre est de contacter l’équipe ATF pour déblocage.",
-  "Facilités de caisse": "En cas d’inexistence de la facilité de caisse au niveau de la capacité de paiement d’un client, envoyer un mail au CTN pour prise en charge de la saisie sur T24 (renouvellement ou nouvelle mise en place)",
-  "Messages d’erreur": "Les messages d’erreur les plus fréquents ont été revus et traduits, le restant sera traduit au fur et à mesure",
-  "Consultation des packs": "Il est désormais possible de consulter les packs liés à un compte via NACOM (par l’agence). Vous pouvez utiliser cette transaction Liste pack par compte dans le menu Offres Packagées pour vérifier la liste des packs par compte au niveau du HOST.",
-  "Retrait et versement avec date de valeur préférentielle": "Le retrait et versement avec date de valeur préférentielle est à effectuer sur PAP au lieu de T24. Ceci dans l’attente du déploiement de la gestion automatique des dates de valeurs préférentielle\nProcéder par la suite à un encaissement/décaissement SUR T24 de la caisse secondaire de l’agent ayant effectué l’opération.",
-  "Délivrance de l’Attestation de RIB": "L’attestation de RIB n’est à délivrer au client qu’une fois le dossier juridique validé par le Back -Office CTN Gestion des comptes et la surveillance levée par ce dernier. En effet, au cas où le client ferait prévaloir cette attestation auprès d’instances externes à la banque et que des opérations liées à cette démarche devraient donner lieu au débit du compte (domiciliation des titres d’importation, …), elles n’aboutiraient pas et se traduiraient par des préjudices à la relation.",
-  "Ajout de cotitulaire sur un compte": "Avant de valider l’ajout de cotitulaire(s) sur un compte, il y a lieu de s’assurer que le champ produit affiche le compte attribué au client, à vérifier sur l'overview client. Si ce champ affiche un compte STD, il y a lieu de choisir sur la liste déroulante le bon produit pour éviter tout blocage",
-  "RAPPEL : Clients de passage": "Nous rappelons que la mini signalétique client de passage présente au niveau des écrans de distribution est une contrainte réglementaire, les données saisies sont disponibles au niveau de la CIN du client obligatoire pour effectuer les opérations (la seule information à demander est la profession).\nCes données sont saisies une seule fois lors du premier passage du tiers et sont stockées au niveau de la base T24, au prochain passage il suffira de renseigner le numéro de la CIN et les informations saisies auparavant remonteront sur les écrans automatiquement et ceci quelque soit l’agence ou le tiers se présenterait.",
-  "Time Out de 5min": "Le système a été paramétré de façon à purger les sessions qui dépassent 5 min d’inactivité.\nL’activité sur T24 est véhiculée via le déroulement d’une liste de valeur par exemple et non pas un clic sur la page, il est recommandé de cliquer sur une des listes déroulantes de la page en cours pour réinitialiser le compteur."
+        "Paiement des frais d'enregistrement de la carte de l'auto-entrepreneur : référence sur T24 13 chiffres au lieu de 12 (transaction PFA)": "Dérouler l'opération sur le Legacy en effectuant une opération d'encaissement sur T24",
+        "Compte reçu par mutation affiche le message compte non géré par votre agence": "Le processus partagé sur la com Hello Sprint est a respecter en renseignant la demande : mutation Tiers ou mutation compte et en la communiquant au DGSI de la BPR",
+        "Champ taille entreprise": "Ce champ n’est pas modifiable en agence, la gestion est centralisée à la BCP via une mise a jour automatisée par chargement de fichier",
+        "Eligibilité compte/ packs": "L’éligibilité aux Comptes et packs est calculée à partir de la signalétique client, la première vérification à faire en cas de problème et de checker les données signalétiques.",
+        "Retrait déplacé sans chèque au titulaire du compte": "L'agence doit faire un retrait MAD pour lui-même au lieu de Chaabi Cash sauf en cas d’un forçage sur le compte du client",
+        "Pour éviter l'affichage du message \"MAD réglée\" lors du règlement des MAD": "Ne pas fermer la fenêtre avant l'aboutissement de l'opération",
+        "Retraits sans chèques sans commissions": "Les frais des retraits sans chèques ne sont pas prélevés pour les deux cas suivants :\n1. Client nouvellement crée ne disposant pas de moyens de paiement (pendant un délai de 3 semaines)\n2. Client interdit de chéquiers jusqu'à régularisation de sa situation\n\nPour les cas normaux la commission est de 33DH quel que soit le montant.",
+        "Accès à la caisse": "Le RA peut disposer de deux caisses (caisse secondaire et caisse principale), toutefois, pour y accéder une seule caisse peut être ouverte",
+        "Chéquiers qui ne sont pas physiquement reçus et s'affichent sur le SI T24 pour réception": "Les anciennes commandes de chéquiers qui n’ont pas abouti et qui remontent à des dates très anciennes (Juin et juillet) dont les carnets ne sont pas physiquement reçus par l’agence peuvent être détruits sur T24 en utilisant le code : 16 = Annulation",
+        "Pour permettre au CTN GC de lever la surveillance « dossier juridique en cours de validation »": "Il y a lieu de :\nS’assurer que les deux champs « Motif de levée de la surveillance » et « Commentaire désactivation/modification » sont à blanc et dénouer les opérations en instance de validation objet de « Pending Approval » au niveau de l’overview du compte.",
+        "Paiement d'une opération RIA": "Le paiement d’une opération RIA n’est effectif qu’après édition du bordereau, si l’utilisateur n’arrive pas à l’étape de l’impression l’opération est considérée comme non autorisée et le client ne doit pas être servi.",
+        "Mise à disposition": "Si la MAD a été topée P (statut payé) sur Host sans que l'opération ne soit retrouvée sur T24 par l'agence en charge du règlement, l'utilisateur doit d'abord sortir du menu règlement et refaire cette opération une nouvelle fois.",
+        "Numéro GSM des sms": "En cas de non réplication du numéro GSM bloquant la création d'une carte sur Power card, il faut modifier la fiche et ajouter +212. \nLors de l'entrée en relation via DIGITALIS avec +212.",
+        "La levée de la surveillance migrée « 79 : Autre motif migration » sur le compte est à opérer à l’instar des surveillances manuelles suivantes levées en Front office": "20 : opposition sur compte\n21 : opposition à tous mouvements\n22 : oppositions des héritiers\n33 : saisie gel judiciaire\nLa levée des surveillances précitées doit être appuyée par un justificatif conformément au dispositif réglementaire interne.",
+        "Chemin de levée d’une surveillance manuelle": "1. Aller sur le menu \"Gestion des surveillances\" puis \"Lever de la surveillance\"\n2. Renseigner le numéro de compte en question\n3. Cliquer sur le \"+\" comme pour ajouter un nouveau motif de surveillance puis cliquer sur le \"-\" qui apparait en rouge\n4. Cliquer sur Approuver en sollicitant la validation d'un deuxième profil",
+        "Etapes de levée d’une surveillance mixte dont l’habilitation est du ressort du Front office (Cf. Hello Sprint du 28/07)": "Cette levée doit être appuyée par un justificatif conformément au dispositif réglementaire interne.",
+        "Chemin de levée d’une surveillance mixte de l'Overview compte": "1. Accès à l'Overview à travers la Recherche du compte\n2. Levée à travers le lien « Levée surveillances mixtes » et validation via un deuxième profil à travers le lien «Autorisat. levée surveillances mixtes » (cf. Hello Sprint du 28/07)",
+        "Exécution d'une opération de caisse au débit (message bloquant : Le solde de la caisse est insuffisant)": "S'assurer de l'autorisation des transferts entre la caisse principale et la caisse secondaire au démarrage de la journée avant la saisie de toutes opérations de caisse afin d'éviter les écarts entre les coupures et le solde de la caisse.",
+        "Levée de blocage manuel": "Lorsqu’on souhaite lever un blocage manuellement des deux systèmes (MANSOUR/T24), il faudrait commencer par la levée dans T24 dans un premier temps, et ensuite le lever dans MANSOUR PAP.",
+        "Affectation d’une caisse à un nouvel agent": "Avant l’affectation d’un agent vers une nouvelle agence, toujours s’assurer au préalable qu’il n’a pas une caisse qui lui est encore affectée, … pour éviter tout blocage dans sa nouvelle affectation.",
+        "Problème d’impression": "Ne pas quitter l’écran principal de l’impression avant la fin du traitement : sablier ou barre de progression en cours, ou alors édition non trouvée merci de réessayer. Dans ce dernier cas, il faut cliquer sur ok et redemander l’impression.",
+        "Historique des comptes 13230 non consultables sur PAP mais consultables sur T24": "Changer le générique 13230 (PCI) par le correspondant 12131 (PCEC). Faire la consultation sur docubase",
+        "Au moment de la clôture de compte, le message suivant s’affiche « Partiel payoff is not allowed »": "Vérifier au niveau de l’onglet Bills dans la rubrique Addional Details au niveau de l’over view du compte, l’existence d’impayés en instance de règlement",
+        "Clôture compte sur carnet": "Le retrait pour la clôture du compte sur carnet à effectuer sur PAP au lieu de T24",
+        "Incidents KYC": "Lors de l’élaboration du compte rendu d’entretien NE PAS UTILISER SUR LE BOUTON BROUILLON",
+        "Clients de passage": "La modification de la mini signalétique clients de passage se fait EXCLUSIVEMENT au niveau des écrans référentiel, la modification effectuée sur les écrans des opérations n’est pas prise en charge.",
+        "Souscription aux packages avec message d’erreur : Expiry date": "Si le message d’erreur est affiché lors de la souscription aux packages remonter le problème pour résolution en central par les équipes ATF.\nUne fausse manipulation est constatée pour contourner ce problème en supprimant la valeur UPDATE du champ Action en bas de l’écran, cette action débloque l’écran de souscription mais engendre des problèmes de comptabilisation et de réplication du pack en question au niveau du host.\n\nDe ce fait dès apparition de ce message la seule action à entreprendre est de contacter l’équipe ATF pour déblocage.",
+        "Facilités de caisse": "En cas d’inexistence de la facilité de caisse au niveau de la capacité de paiement d’un client, envoyer un mail au CTN pour prise en charge de la saisie sur T24 (renouvellement ou nouvelle mise en place)",
+        "Messages d’erreur": "Les messages d’erreur les plus fréquents ont été revus et traduits, le restant sera traduit au fur et à mesure",
+        "Consultation des packs": "Il est désormais possible de consulter les packs liés à un compte via NACOM (par l’agence). Vous pouvez utiliser cette transaction Liste pack par compte dans le menu Offres Packagées pour vérifier la liste des packs par compte au niveau du HOST.",
+        "Retrait et versement avec date de valeur préférentielle": "Le retrait et versement avec date de valeur préférentielle est à effectuer sur PAP au lieu de T24. Ceci dans l’attente du déploiement de la gestion automatique des dates de valeurs préférentielle\nProcéder par la suite à un encaissement/décaissement SUR T24 de la caisse secondaire de l’agent ayant effectué l’opération.",
+        "Délivrance de l’Attestation de RIB": "L’attestation de RIB n’est à délivrer au client qu’une fois le dossier juridique validé par le Back -Office CTN Gestion des comptes et la surveillance levée par ce dernier. En effet, au cas où le client ferait prévaloir cette attestation auprès d’instances externes à la banque et que des opérations liées à cette démarche devraient donner lieu au débit du compte (domiciliation des titres d’importation, …), elles n’aboutiraient pas et se traduiraient par des préjudices à la relation.",
+        "Ajout de cotitulaire sur un compte": "Avant de valider l’ajout de cotitulaire(s) sur un compte, il y a lieu de s’assurer que le champ produit affiche le compte attribué au client, à vérifier sur l'overview client. Si ce champ affiche un compte STD, il y a lieu de choisir sur la liste déroulante le bon produit pour éviter tout blocage",
+        "RAPPEL : Clients de passage": "Nous rappelons que la mini signalétique client de passage présente au niveau des écrans de distribution est une contrainte réglementaire, les données saisies sont disponibles au niveau de la CIN du client obligatoire pour effectuer les opérations (la seule information à demander est la profession).\nCes données sont saisies une seule fois lors du premier passage du tiers et sont stockées au niveau de la base T24, au prochain passage il suffira de renseigner le numéro de la CIN et les informations saisies auparavant remonteront sur les écrans automatiquement et ceci quelque soit l’agence ou le tiers se présenterait.",
+        "Time Out de 5min": "Le système a été paramétré de façon à purger les sessions qui dépassent 5 min d’inactivité.\nL’activité sur T24 est véhiculée via le déroulement d’une liste de valeur par exemple et non pas un clic sur la page, il est recommandé de cliquer sur une des listes déroulantes de la page en cours pour réinitialiser le compteur."
     }
     for sujet, solution in bonnes_pratiques.items():
         with st.expander(f"📌 {sujet}"):
             st.markdown(f"<div style='padding-left:1rem;'>{solution}</div>", unsafe_allow_html=True)
+
 # ------------------- ONGLET ADMIN -------------------
 elif onglet == "🔐 Admin":
-    MONGO_URI = "mongodb://localhost:27017"
-    DB_NAME = "chatbot_db"
     # Configuration du style
     st.markdown("""
         <style>
@@ -376,9 +381,6 @@ elif onglet == "🔐 Admin":
     if st.session_state.get('admin_logged'):
         try:
             # Initialisation MongoDB
-            QUESTIONS_COLLECTION = "qa"
-            USAGE_COLLECTION = "usage_stats"
-            FEEDBACK_COLLECTION = "feedback"
             @st.cache_resource
             def init_mongo():
                 try:
@@ -447,7 +449,7 @@ elif onglet == "🔐 Admin":
                 # Temps de réponse
                 avg_time_result = list(db[QUESTIONS_COLLECTION].aggregate([
                     {"$group": {"_id": None, "avg": {"$avg": "$response_time"}}}
-                      ]))
+                ]))
                 avg_time = avg_time_result[0]["avg"] if avg_time_result and avg_time_result[0]["avg"] is not None else 0
                 display_metric(col6, "Temps de réponse", f"{round(avg_time, 2)}", "sec", icon="⚡")
             except Exception as e:
@@ -459,7 +461,8 @@ elif onglet == "🔐 Admin":
                 top_questions = list(db[QUESTIONS_COLLECTION].aggregate([
                     {"$group": {"_id": "$question", "count": {"$sum": 1}}},
                     {"$sort": {"count": -1}},
-                    {"$limit": 10}]))
+                    {"$limit": 10}
+                ]))
                 if top_questions:
                     fig = px.bar(
                         x=[q["count"] for q in top_questions],
